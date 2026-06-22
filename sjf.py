@@ -1,3 +1,8 @@
+import threading
+import time
+from tabulate import tabulate
+
+
 def get_positive_int(prompt):
     """
     Helper function to guarantee a valid, positive integer input.
@@ -32,9 +37,8 @@ def run_sjf():
         # Collect burst time for each individual process
         for i in range(num_processes):
             bt = get_positive_int(f"Enter burst time for Process {i+1}: ")
-            # Store metadata using a 1-based index for user-friendly IDs
-            job_list.append({"id": i + 1, "burst": bt})
-            
+            job_list.append({"id": i + 1, "burst": bt})      
+                   
     except (KeyboardInterrupt, SystemExit):
         # This handles Ctrl+C or early termination signals
         print("\n\nOperation cancelled by user.")
@@ -52,41 +56,115 @@ def run_sjf():
 
     # Initialize tracking structures based on the total number of processes
     n = len(job_list)
-    waiting_time = [0] * n      # Time each process waits in the ready queue
-    turnaround_time = [0] * n  # Total time from arrival to completion
 
+  # ── Shared state ───────────────────────────────────────────────────────────
+    results      = {}       # { process_id: { burst, waiting_time, turnaround_time } }
+    current_time = [0]      # Wrapped in a list so threads can mutate it
+
+    # Lock — protects current_time and results from simultaneous writes
+    results_lock = threading.Lock()
+
+    # Binary semaphore (value=1) → models a single-core CPU.
+    # Only one thread may hold it at a time, enforcing non-preemptive execution.
+    cpu_semaphore = threading.Semaphore(1)
+
+    # Barrier — all n threads must reach this point before any one of them
+    # is allowed to compete for the CPU. Prevents early-spawned threads from
+    # finishing before later ones are even created, which would corrupt the
+    # simulated arrival order.
+    barrier = threading.Barrier(n)
+
+    # ── Per-process thread function ────────────────────────────────────────────
+    def process_task(index):
+        """
+        Simulates one process:
+          1. Wait at the barrier until every thread is ready.
+          2. Acquire the semaphore (queue for the CPU).
+          3. Record timing, sleep to simulate work, release the semaphore.
+        """
+        proc = job_list[index]
+
+        # ── Phase 1: synchronise — wait for all threads to be spawned ─────────
+        barrier.wait()
+
+        # ── Phase 2: acquire CPU (blocks while another process is running) ─────
+        cpu_semaphore.acquire()
+
+        try:
     
-    # The very first job in the sorted list starts immediately, so waiting time is 0.
-    waiting_time[0] = 0
-    
-    # Waiting time for current process = (Waiting time of previous process) + (Burst time of previous process)
-    for i in range(1, n):
-        waiting_time[i] = waiting_time[i - 1] + job_list[i - 1]["burst"]
+            with results_lock:
+                # All processes assumed to arrive at time 0, so:
+                #   waiting_time    = current_time (time spent in the ready queue)
+                #   turnaround_time = waiting_time + burst_time
+                wt  = current_time[0]
+                tat = wt + proc["burst"]
+                current_time[0] += proc["burst"]   # Advance the simulated clock
 
-    # Calculate Turnaround Time for all processes.
-    # Turnaround Time = Burst Time + Waiting Time (since Arrival Time is 0)
-    for i in range(n):
-        turnaround_time[i] = job_list[i]["burst"] + waiting_time[i]
+            # Simulate CPU execution — sleep proportional to burst time
+            # 
+            time.sleep(proc["burst"] * 0.1)
 
-    avg_wt = sum(waiting_time) / n
-    avg_tat = sum(turnaround_time) / n
+            with results_lock:
+                results[proc["id"]] = {
+                    "burst"          : proc["burst"],
+                    "waiting_time"   : wt,
+                    "turnaround_time": tat,
+                }
 
-    #Display Output table
-    print("\n" + "=" * 55)
-    # Formatted column headers with left alignment (<) and static widths
-    print(f"{'Process':<10}{'Burst Time':<15}{'Waiting Time':<15}{'Turnaround Time':<15}")
-    print("=" * 55)
-    
-    # Print the specific metrics gathered for each sorted process
-    for i in range(n):
-        proc_label = f"P{job_list[i]['id']}"
-        print(f"{proc_label:<10}{job_list[i]['burst']:<15}{waiting_time[i]:<15}{turnaround_time[i]:<15}")
-        
-    # Print summary performance metrics
-    print("-" * 55)
-    print(f"Average Waiting Time:     {avg_wt:.2f}")
-    print(f"Average Turn Around Time: {avg_tat:.2f}")
-    print("=" * 55)
+            print(f"  [Thread-{index}] P{proc['id']} done  |  "
+                  f"Burst={proc['burst']}  WT={wt}  TAT={tat}")
+
+        finally:
+            # ── Phase 4: release CPU — always runs, even on exception ─────────
+            cpu_semaphore.release()
+
+    # ── Spawn one thread per process ───────────────────────────────────────────
+    threads = [
+        threading.Thread(target=process_task, args=(i,), name=f"P{job_list[i]['id']}")
+        for i in range(n)
+    ]
+
+    print("\n[Simulation started — all threads spawned and queued]\n")
+
+    for t in threads:
+        t.start()
+
+    # Main thread blocks here until every worker thread has finished
+    for t in threads:
+        t.join()
+
+    print("\n[All threads completed]\n")
+
+    # Tabulate results rows and compute averages for waiting and turnaround times
+    table_rows   = []
+    waiting_times     = []
+    turnaround_times  = []
+
+    for job in job_list:
+        r = results[job["id"]]
+        table_rows.append([
+            f"P{job['id']}",
+            r["burst"],
+            r["waiting_time"],
+            r["turnaround_time"],
+        ])
+        waiting_times.append(r["waiting_time"])
+        turnaround_times.append(r["turnaround_time"])
+
+    avg_wt  = sum(waiting_times)    / n
+    avg_tat = sum(turnaround_times) / n
+
+    # tabulate output 
+    headers = ["Process", "Burst Time", "Waiting Time", "Turnaround Time"]
+
+    print(tabulate(table_rows, headers=headers, tablefmt="double_grid"))
+
+    # Output the table for summary of average waiting time and average turnaround time
+    summary_rows = [
+        ["Average Waiting Time",      "", "", f"{avg_wt:.2f}"],
+        ["Average Turnaround Time",   "", "", f"{avg_tat:.2f}"],
+    ]
+    print(tabulate(summary_rows, tablefmt="double_grid"))
 
 # Call the function
-run_sjf()
+run_sjf() 
