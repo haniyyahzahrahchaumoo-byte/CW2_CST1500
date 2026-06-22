@@ -38,7 +38,7 @@ def run_sjf():
         for i in range(num_processes):
             bt = get_positive_int(f"Enter burst time for Process {i+1}: ")
             job_list.append({"id": i + 1, "burst": bt})      
-                   
+
     except (KeyboardInterrupt, SystemExit):
         # This handles Ctrl+C or early termination signals
         print("\n\nOperation cancelled by user.")
@@ -57,7 +57,7 @@ def run_sjf():
     # Initialize tracking structures based on the total number of processes
     n = len(job_list)
 
-  # ── Shared state ───────────────────────────────────────────────────────────
+  #  Shared state 
     results      = {}       # { process_id: { burst, waiting_time, turnaround_time } }
     current_time = [0]      # Wrapped in a list so threads can mutate it
 
@@ -74,7 +74,7 @@ def run_sjf():
     # simulated arrival order.
     barrier = threading.Barrier(n)
 
-    # ── Per-process thread function ────────────────────────────────────────────
+    #  Per-process thread function 
     def process_task(index):
         """
         Simulates one process:
@@ -83,11 +83,7 @@ def run_sjf():
           3. Record timing, sleep to simulate work, release the semaphore.
         """
         proc = job_list[index]
-
-        # ── Phase 1: synchronise — wait for all threads to be spawned ─────────
         barrier.wait()
-
-        # ── Phase 2: acquire CPU (blocks while another process is running) ─────
         cpu_semaphore.acquire()
 
         try:
@@ -101,7 +97,6 @@ def run_sjf():
                 current_time[0] += proc["burst"]   # Advance the simulated clock
 
             # Simulate CPU execution — sleep proportional to burst time
-            # 
             time.sleep(proc["burst"] * 0.1)
 
             with results_lock:
@@ -115,10 +110,10 @@ def run_sjf():
                   f"Burst={proc['burst']}  WT={wt}  TAT={tat}")
 
         finally:
-            # ── Phase 4: release CPU — always runs, even on exception ─────────
+            
             cpu_semaphore.release()
 
-    # ── Spawn one thread per process ───────────────────────────────────────────
+    #  Spawn one thread per process 
     threads = [
         threading.Thread(target=process_task, args=(i,), name=f"P{job_list[i]['id']}")
         for i in range(n)
