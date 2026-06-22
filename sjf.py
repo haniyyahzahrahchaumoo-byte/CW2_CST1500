@@ -156,8 +156,8 @@ def run_sjf():
 
     # Output the table for summary of average waiting time and average turnaround time
     summary_rows = [
-        ["Average Waiting Time",      "", "", f"{avg_wt:.2f}"],
-        ["Average Turnaround Time",   "", "", f"{avg_tat:.2f}"],
+        ["Average Waiting Time", f"{avg_wt:.2f}"],
+        ["Average Turnaround Time", f"{avg_tat:.2f}"],
     ]
     print(tabulate(summary_rows, tablefmt="double_grid"))
 
