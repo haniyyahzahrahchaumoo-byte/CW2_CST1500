@@ -1,6 +1,10 @@
 import threading
+import pandas as pd
+import streamlit as st
 import time
-from tabulate import tabulate
+
+# Setting up the Streamlit Page Configuration
+st.set_page_config(page_title= 'Shortest Job First(SJF) Scheduling Simulator',layout = 'wide')
 
 
 def get_positive_int(prompt):
@@ -50,21 +54,20 @@ def run_sjf():
         return
 
   
-    # SJF prioritizes the shortest jobs first. Sorting the list in ascending 
-    # order ensures the CPU processes them in the optimal sequence.
+    # Sorting the list in ascending order ensures the CPU processes them in the optimal sequence.
     job_list.sort(key=lambda x: x["burst"])
 
     # Initialize tracking structures based on the total number of processes
     n = len(job_list)
 
-  #  Shared state 
+  
     results      = {}       # { process_id: { burst, waiting_time, turnaround_time } }
     current_time = [0]      # Wrapped in a list so threads can mutate it
 
     # Lock — protects current_time and results from simultaneous writes
     results_lock = threading.Lock()
 
-    # Binary semaphore (value=1) → models a single-core CPU.
+    # Binary semaphore (value=1)
     # Only one thread may hold it at a time, enforcing non-preemptive execution.
     cpu_semaphore = threading.Semaphore(1)
 
@@ -119,7 +122,7 @@ def run_sjf():
         for i in range(n)
     ]
 
-    print("\n[Simulation started — all threads spawned and queued]\n")
+    print("\n[ All threads spawned and queued]\n")
 
     for t in threads:
         t.start()
