@@ -33,7 +33,7 @@ def round_robin(processes, burst_times, quantum, arrival_times, ui_queue):
     remaining_bt = burst_times[:]
     completion_time = [0] * n
     # clock time is set to 0
-    time = 0
+    clock_time = 0
     # queue stores process indices
     queue = list(range(n))
     gantt_data = []
@@ -41,10 +41,10 @@ def round_robin(processes, burst_times, quantum, arrival_times, ui_queue):
     while queue:
         # takes first process in queue
         i = queue.pop(0)
-        start_time = time
+        start_time = clock_time
         # if process needs more time than quantum
         if remaining_bt[i] > quantum:
-            time += quantum
+            clock_time += quantum
             # calculates remaining burst time after running it for one quantum
             remaining_bt[i] -= quantum
             run_time = quantum
@@ -57,24 +57,26 @@ def round_robin(processes, burst_times, quantum, arrival_times, ui_queue):
         #process finishes within quantum
         else:
             # run process for its remaining burst time
-            time += remaining_bt[i]
+            clock_time += remaining_bt[i]
             # record time when process finishes
             run_time = remaining_bt[i]
             remaining_bt[i] = 0
-            completion_time[i] = turnaround_time
+            completion_time[i] = clock_time
 
             # simulate final run
-            t = threading.Thread(target=process_worker, args=(processes[i], quantum, ui_queue))
+            t = threading.Thread(target=process_worker, args=(processes[i], run_time, ui_queue))
             
             t.start()
             t.join()
-            #Track Gantt data
-            gantt_data.append(dict(
-                Process=f"Process {processes[i]}",
-                Start=start_time,
-                Finish=time,
-                Duration=run_time
-            ))
+
+
+        #Track Gantt data
+        gantt_data.append(dict(
+            Process=f"Process {processes[i]}",
+            Start=start_time,
+            Finish=clock_time,
+            Duration=run_time
+        ))
             
 
     
@@ -146,7 +148,7 @@ if st.sidebar.button("Start", type="primary"):
     
     # Run the scheduler loop inside an asynchronous worker thread so it doesn't freeze the main page
     scheduler_thread = threading.Thread(
-        target= process_worker, 
+        target= round_robin,
         args=(processes, burst_times, quantum, arrival_times, ui_queue)
     )
     scheduler_thread.start()
