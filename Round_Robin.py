@@ -79,8 +79,6 @@ def round_robin(processes, burst_times, quantum, arrival_times, ui_queue):
         ))
             
 
-    
-
     # Calculate final performance statistics
     
     turnaround_time = []
