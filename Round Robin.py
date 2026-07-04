@@ -107,16 +107,22 @@ def round_robin(processes, burst_times, quantum, arrival_times):
     # Append the results to file
     with open("RoundRobin.txt", "a", encoding="utf-8") as f:
 <<<<<<< HEAD
+<<<<<<< HEAD
             f.write("\n--- Round Robin Results ---\n")
             f.write(tabulate(table, headers=columns, tablefmt="fancy_grid")+ "\n")
             f.write(f"Average Waiting Time: {avg_wt:.2f}\n")
             f.write(f"Average Turnaround Time: {avg_tat:.2f}\n\n")
 
 =======
+=======
+>>>>>>> 347e2c8d5196b798edfd17d5a8435cebd934bdb3
         f.write("\n--- Round Robin Results ---\n")
         f.write(tabulate(table, headers=columns, tablefmt="fancy_grid")+ "\n")
         f.write(f"Average Waiting Time: {avg_wt:.2f}\n")
         f.write(f"Average Turnaround Time: {avg_tat:.2f}\n\n")
+<<<<<<< HEAD
+>>>>>>> 347e2c8d5196b798edfd17d5a8435cebd934bdb3
+=======
 >>>>>>> 347e2c8d5196b798edfd17d5a8435cebd934bdb3
 
 def main():
