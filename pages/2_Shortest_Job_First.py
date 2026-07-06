@@ -7,7 +7,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import datetime
 
+# Import libraries for multithreading, database storage,
+# data processing, visualisation and the Streamlit web interface.
+
 # MODELS & DATA OBJECTS
+# Represents a single process and stores scheduling metrics.
 class Process:
     def __init__(self, pid: int, burst_time: int, arrival_time: int = 0):
         self.pid = pid
@@ -22,7 +26,8 @@ class Process:
         return f"Process {self.pid}"
 
 
-# DATABASE MANAGEMENT LAYER 
+# Database Management Layer 
+# Handles all SQLite database operations and stores simulation history.
 class DatabaseManager:
     def __init__(self, db_name="sjf_scheduler_history.db"):
         self.db_name = db_name
@@ -82,7 +87,8 @@ class DatabaseManager:
         
         return unique_table_name
 
-# SCHEDULER & WORKER THREAD LOGIC
+# Scheduler & Worker thread logic
+# Implements the non-preemptive SJF Scheduling algorithm
 class SJFScheduler:
     def __init__(self, processes: list[Process], ui_queue: Queue):
         self.processes = processes
@@ -91,12 +97,15 @@ class SJFScheduler:
         self.gantt_data = []
 
     def _process_worker(self, process: Process, start_time: int):
+        # Simulate CPU execution while ensuring only one thread accesses the CPU
         with self.cpu_lock:
             self.ui_queue.put(("status", f"🟢 {process.label} (Burst: {process.burst_time}s) started running..."))
             time.sleep(process.burst_time * 0.2)  # Simulated execution delay
             self.ui_queue.put(("status", f"🔴 {process.label} finished processing execution."))
 
     def run(self):
+        # Execute processes in ascending burst time order (SJF).
+        # Sort processes by burst time as required by SJF
         sorted_processes = sorted(self.processes, key=lambda x: x.burst_time)
         clock_time = 0
 
@@ -122,6 +131,7 @@ class SJFScheduler:
         self._calculate_metrics(sorted_processes)
 
     def _calculate_metrics(self, sorted_processes):
+        # Compile process statistics and calculate overall performance.
         df_results = pd.DataFrame({
             "Process": [p.label for p in sorted_processes],
             "Arrival Time": [p.arrival_time for p in sorted_processes],
@@ -153,6 +163,7 @@ class SJFScheduler:
 
 
 def ganttchart(chart):
+    # Display the execution timeline of scheduled processes.
     """
     Draws a colourful Gantt chart using Matplotlib.
     Each process is shown as a horizontal bar with its label.
@@ -168,7 +179,7 @@ def ganttchart(chart):
     ax.set_title("Shortest Job First Gantt Chart")
     st.pyplot(fig)
 
-# INTERACTION & UI PRESENTATION LAYER
+# Interaction & UI presentation layer
 st.set_page_config(page_title='SJF Scheduler', layout='wide')
 #  Home navigation button to go back to Main Menu
 if st.button("⬅️ Back to Main Menu"):
@@ -192,6 +203,7 @@ for i in range(1, num_processes + 1):
 if "sjf_simulation_results" not in st.session_state:
     st.session_state.sjf_simulation_results = None
 
+# Launch the scheduling simulation.
 if st.sidebar.button("Start", type="primary"):
     st.session_state.sjf_simulation_results = None  
     shared_queue = Queue()
@@ -219,7 +231,7 @@ if st.sidebar.button("Start", type="primary"):
     time.sleep(0.1)
     st.rerun()
 
-# DISPLAY OF THE RESULTS AND THE GANTT CHART
+# Display of the results and the Gantt Chart
 if st.session_state.sjf_simulation_results is not None:
     df_res, avg_wt, avg_tat, df_gantt = st.session_state.sjf_simulation_results
 
@@ -247,11 +259,11 @@ if st.session_state.sjf_simulation_results is not None:
     st.write("Running this exact workload configuration through FCFS and Round Robin engines for comparison.")
     burst_time = [p.burst_time for p in processes_list]
 
-    # 1. Shortest Job First values come from this page's variables
+    # Shortest Job First values come from this page's variables
     sjf_wait = avg_wt
     sjf_tat = avg_tat
 
-        # 2. Simulate FCFS metrics for these bursts
+        # Simulate FCFS metrics for these bursts
     fcfs_waiting_times = []
     current_wait = 0
     for b in burst_time:
