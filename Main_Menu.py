@@ -23,7 +23,7 @@ option = st.radio(
         "Main Menu",
         "Round Robin (RR) Scheduler", 
         "Shortest Job First (SJF) Scheduler",
-        "First Come First Serve Scheduler (FCFS)",
+        "First Come First serve Scheduler (FCFS)",
         "View Round Robin Database History",
         "View SJF Database History",
         "View FCFS Database History"
@@ -39,8 +39,8 @@ if option == "Round Robin (RR) Scheduler":
 elif option == "Shortest Job First (SJF) Scheduler":
     st.switch_page("pages/2_Shortest_Job_First.py")
 
-elif option == "First Come First Serve(FCFS) Scheduler":
-    st.switch_page("pages/3_First_Come_First_Serve.py")
+elif option == "First Come First serve Scheduler (FCFS)":
+    st.switch_page("pages/3_First_Come_First_serve.py")
 
 elif option == "View Round Robin Database History":
     st.switch_page("pages/4_RR_Database.py")

@@ -32,7 +32,17 @@ class Process:
 class DatabaseManager:
     def __init__(self, db_name="RR_scheduler_history.db"):
         self.db_name = db_name
-
+    def _init_index_table(self, cursor):
+        """Initializes a master execution index tracking block."""
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS run_index (
+                run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                table_name TEXT,
+                avg_waiting REAL,
+                avg_turnaround REAL,
+                timestamp DATETIME
+            )
+        """)
     def  _get_next_table_number(self, cursor, algorithm_name: str) -> int:
         """Queries the SQLite system catalog to count existing run tables."""
         # Finds all tables starting with 'run_RR_'
@@ -55,15 +65,15 @@ class DatabaseManager:
             "Turnaround Time (TAT = CT - AT)": "turnaround_time",
             "Turnaround Time (TAT)": "turnaround_time", 
             "Waiting Time(WT = TAT - BT)": "waiting_time",
-            "Waiting Time (WT)": "waiting_time"
+            
         }).copy() #.copy()avoids slicing configuration errors
-
-        df_to_save["avg_waiting_time"] = avg_waiting
-        df_to_save["avg_turnaround_time"] = avg_turnaround
+        current_now_ts = datetime.datetime.now().isoformat()
+        df_to_save["timestamp"] = current_now_ts
 
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
-            
+            self._init_index_table(cursor)
+
             #Calculate the next sequential number
             table_num = self._get_next_table_number(cursor, algorithm_name)
             unique_table_name = f"run_{algorithm_name}_Table_{table_num}"
@@ -71,7 +81,8 @@ class DatabaseManager:
 
             # Create brand new isolated tables
             cursor.execute(f"""
-                CREATE TABLE IF NOT EXISTS {unique_table_name} (
+                CREATE TABLE IF NOT EXISTS {unique_table_name} 
+                (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                     process_name TEXT,
@@ -79,15 +90,15 @@ class DatabaseManager:
                     burst_time INTEGER,
                     completion_time INTEGER,
                     turnaround_time INTEGER,
-                    waiting_time INTEGER,
-                    avg_waiting_time REAL,      
-                    avg_turnaround_time REAL
-
+                    waiting_time INTEGER
                 )
             """) 
             
-            df_to_save.to_sql(unique_table_name, conn, if_exists="replace", index=False)
-        
+            df_to_save.to_sql(unique_table_name, conn, if_exists="append", index=False)
+            cursor.execute("INSERT INTO run_index (table_name, avg_waiting, avg_turnaround, timestamp) VALUES (?, ?, ?, ?)",
+                (unique_table_name, avg_waiting, avg_turnaround, current_now_ts)
+            )
+            conn.commit()
         return unique_table_name
 
 
@@ -278,7 +289,7 @@ if st.sidebar.button("Start", type="primary"):
 
     
      
-    st.subheader("🖥️ Thread Activity Status")
+    st.subheader("🖥️ Live Thread Activity Status")
     log_container = st.empty()
     log_text = ""
    
@@ -307,7 +318,7 @@ if st.session_state.simulation_results is not None:
 
     #  Performance Table Summary 
     st.subheader("📋 Performance Table")
-    st.dataframe(df_res.set_index("Process"), use_container_width=True)
+    st.dataframe(df_res.set_index(df_res.columns[0]), use_container_width=True)
 
     save_col1, save_col2 = st.columns([1,3])
 
@@ -322,7 +333,7 @@ if st.session_state.simulation_results is not None:
     ganttchart(df_gantt.values.tolist())
 
     st.markdown("---")
-    st.subheader("📶 Cross-Algorithm Performance Analysis")
+    st.subheader("📶 Algorithm Performance Comparison")
     st.write("Running this exact workload configuration through FCFS and SJF engines for comparison.")
 
     bursts_list = [p.burst_time for p in processes]
@@ -362,7 +373,7 @@ if st.session_state.simulation_results is not None:
       # Determine and display the winner dynamically
     winner_row = min(comparison_data, key=lambda x: (x["raw_wait"], x["raw_tat"]))
     st.success(
-            f"🏆 **Performance Insight:** For this specific set of process burst times, **{winner_row['Algorithm']}** "
+            f"🏆 **Performance Insight:** Recommended: For this specific set of process burst times, **{winner_row['Algorithm']}** "
             f"is the most optimal scheduling method!"
         )
     st.markdown("---")

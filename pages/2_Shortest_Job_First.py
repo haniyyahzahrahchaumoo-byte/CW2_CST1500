@@ -5,7 +5,8 @@ from queue import Queue
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import datetime
+import datetime 
+import random
 
 # Import libraries for multithreading, database storage,
 # data processing, visualisation and the Streamlit web interface.
@@ -31,6 +32,17 @@ class Process:
 class DatabaseManager:
     def __init__(self, db_name="sjf_scheduler_history.db"):
         self.db_name = db_name
+    
+    def _init_index_table(self, cursor):
+     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS run_index (
+            run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            table_name TEXT,
+            avg_waiting REAL,
+            avg_turnaround REAL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
 
     def _get_next_table_number(self, cursor, algorithm_name: str) -> int:
         """Queries the SQLite system catalog to count existing run tables."""
@@ -42,31 +54,16 @@ class DatabaseManager:
         # Next table number is current count + 1 (Starts at 1 if none exist)
         return len(existing_tables) + 1
 
-    def save_results(self, df_results: pd.DataFrame, algorithm_name: str, avg_waiting: float, avg_turnaround: float ):
+    def save_results(self, df_results: pd.DataFrame, algorithm_name: str, avg_waiting: float, avg_turnaround: float):
         """Creates an isolated table sequentially (e.g., run_SJF_Table_1)."""
-        
-        df_to_save = df_results.rename(columns={
-            "Process": "process_name",
-            "Arrival Time": "arrival_time",
-            "Burst Time": "burst_time",
-            "Completion Time(CT)": "completion_time",
-            "Turnaround Time (TAT = CT - AT)": "turnaround_time",
-            "Turnaround Time (TAT)": "turnaround_time", 
-            "Waiting Time(WT = TAT - BT)": "waiting_time",
-            "Waiting Time (WT)": "waiting_time"
-        }).copy()  # .copy() avoids slicing configuration errors
 
-        df_to_save["avg_waiting_time"] = avg_waiting
-        df_to_save["avg_turnaround_time"] = avg_turnaround
-
-        
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
-            
-            #Calculate the next sequential number
+            self._init_index_table(cursor)
+            # Calculate the next sequential number
             table_num = self._get_next_table_number(cursor, algorithm_name)
             unique_table_name = f"run_{algorithm_name}_Table_{table_num}"
-            
+
             # Create brand new isolated tables
             cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS {unique_table_name} (
@@ -77,14 +74,35 @@ class DatabaseManager:
                     burst_time INTEGER,
                     completion_time INTEGER,
                     turnaround_time INTEGER,
-                    waiting_time INTEGER,
-                    avg_waiting_time REAL,     
-                    avg_turnaround_time REAL 
+                    waiting_time INTEGER
                 )
-            """) 
-            
-            df_to_save.to_sql(unique_table_name, conn, if_exists="replace", index=False)
-        
+            """)
+
+            df_to_save = df_results.rename(columns={
+            "Process": "process_name",
+            "Arrival Time": "arrival_time",
+            "Burst Time": "burst_time",
+            "Completion Time(CT)": "completion_time",
+            "Turnaround Time (TAT = CT - AT)": "turnaround_time",
+            "Turnaround Time (TAT)": "turnaround_time", 
+            "Waiting Time(WT = TAT - BT)": "waiting_time",
+            "Waiting Time (WT)": "waiting_time"
+        }).copy()  # .copy() avoids slicing configuration errors
+            current_now_ts = datetime.datetime.now().isoformat()
+            df_to_save["timestamp"] = current_now_ts
+            try:
+                df_to_save.to_sql(unique_table_name, conn, if_exists="append", index=False)
+            except Exception as e:
+                st.exception(e)
+                raise
+
+            # Save averages + timestamp separately in run_index
+            cursor.execute(
+                "INSERT INTO run_index (table_name, avg_waiting, avg_turnaround, timestamp) VALUES (?, ?, ?, ? )",
+                (unique_table_name, avg_waiting, avg_turnaround, current_now_ts)
+            )
+            conn.commit()
+
         return unique_table_name
 
 # Scheduler & Worker thread logic
@@ -99,9 +117,9 @@ class SJFScheduler:
     def _process_worker(self, process: Process, start_time: int):
         # Simulate CPU execution while ensuring only one thread accesses the CPU
         with self.cpu_lock:
-            self.ui_queue.put(("status", f"🟢 {process.label} (Burst: {process.burst_time}s) started running..."))
+            self.ui_queue.put(("status", f"🟢 {process.label} (Burst: {process.burst_time}s) is running..."))
             time.sleep(process.burst_time * 0.2)  # Simulated execution delay
-            self.ui_queue.put(("status", f"🔴 {process.label} finished processing execution."))
+            self.ui_queue.put(("status", f"🔴 {process.label} finished."))
 
     def run(self):
         # Execute processes in ascending burst time order (SJF).
@@ -191,14 +209,41 @@ st.markdown("Non-Preemptive Multi-Threaded CPU Sheduling Engine")
 st.sidebar.header("Configuration")
 num_processes = st.sidebar.number_input("Number of Processes", min_value=3, value=3)
 
-processes_list = []
+# Initialize session state keys for Arrival Time (at) and Burst Time (bt) if they don't exist
+for i in range(1, num_processes + 1):
+    if f"sjf_at_{i}" not in st.session_state:
+        st.session_state[f"sjf_at_{i}"] = 0
+    if f"sjf_bt_{i}" not in st.session_state:
+        st.session_state[f"sjf_bt_{i}"] = 3
+
+#  The Randomize Button (Alters the values tied to the state keys, then reloads)
+if st.sidebar.button("🎲 Randomize Arrival and Burst times"):
+    for i in range(1, num_processes + 1):
+        st.session_state[f"sjf_at_{i}"] = random.randint(0, 5) 
+        st.session_state[f"sjf_bt_{i}"] = random.randint(1, 10)  
+    st.rerun()
+
+#  Render side-by-side inputs explicitly bound to your session_state keys
+processes = []
 for i in range(1, num_processes + 1):
     col1, col2 = st.sidebar.columns(2)
+    
     with col1:
-        at = col1.number_input(f"P{i} Arrival", min_value=0, value=0, key=f"at_{i}", disabled=True)
+        at = col1.number_input(
+            f"P{i} Arrival", 
+            min_value=0, 
+            key=f"sjf_at_{i}"  
+        )
     with col2:
-        bt = col2.number_input(f"P{i} Burst (s)", min_value=1, value=i, key=f"bt_{i}")
-    processes_list.append(Process(pid=i, burst_time=bt, arrival_time=at))
+        bt = col2.number_input(
+            f"P{i} Burst (s)", 
+            min_value=1, 
+            key=f"sjf_bt_{i}"  
+        )
+        
+    
+    processes.append(Process(pid=i, burst_time=bt, arrival_time=at))
+
 
 if "sjf_simulation_results" not in st.session_state:
     st.session_state.sjf_simulation_results = None
@@ -209,11 +254,11 @@ if st.sidebar.button("Start", type="primary"):
     shared_queue = Queue()
     db_mgr = DatabaseManager()
         
-    scheduler = SJFScheduler(processes=processes_list, ui_queue=shared_queue)
+    scheduler = SJFScheduler(processes=processes, ui_queue=shared_queue)
     scheduler_thread = threading.Thread(target=scheduler.run)
     scheduler_thread.start()
      
-    st.subheader("🖥️ Thread Activity Status")
+    st.subheader("🖥️ Live Thread Activity Status")
     log_container = st.empty()
     log_text = ""
 
@@ -239,7 +284,7 @@ if st.session_state.sjf_simulation_results is not None:
     col_m1.metric(label="Average Waiting Time", value=f"{avg_wt:.2f} s")
     col_m2.metric(label="Average Turnaround Time", value=f"{avg_tat:.2f} s")
 
-    st.subheader("📋 Performance Evaluation Table")
+    st.subheader("📋 Performance Table")
     st.dataframe(df_res.set_index("Process"), use_container_width=True)
     
     save_col1, save_col2 = st.columns([1,3])
@@ -255,11 +300,11 @@ if st.session_state.sjf_simulation_results is not None:
     ganttchart(df_gantt.values.tolist()) 
     
     st.markdown("---")
-    st.subheader("📶 Cross-Algorithm Performance Analysis")
+    st.subheader("📶 Algorithm Performance Comparison")
     st.write("Running this exact workload configuration through FCFS and Round Robin engines for comparison.")
-    burst_time = [p.burst_time for p in processes_list]
+    burst_time = [p.burst_time for p in processes]
 
-    # Shortest Job First values come from this page's variables
+    # Shortest Job First values come from this page's variables0
     sjf_wait = avg_wt
     sjf_tat = avg_tat
 
@@ -288,7 +333,7 @@ if st.session_state.sjf_simulation_results is not None:
     # Determine and display the winner dynamically
     winner_row = min(comparison_data, key=lambda x: (x["raw_wait"], x["raw_tat"]))
     st.success(
-            f"🏆 **Performance Insight:** For this specific set of process burst times, **{winner_row['Algorithm']}** "
+            f"🏆 **Performance Insight:** Recommended: For this specific set of process burst times, **{winner_row['Algorithm']}** "
             f"is the most optimal scheduling method!"
         )
     st.markdown("---")      
