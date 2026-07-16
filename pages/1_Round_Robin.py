@@ -12,7 +12,15 @@ import datetime
 # Class process & Data Objects
 # keeps all attributes together
 class Process:
-    """Represents an individual process model and its context tracking."""
+    '''
+    - Each process object stores:
+    - pid: process ID e.g P1,P2..
+    - burst: CPU burst time(how long process uses CPU)
+    - waiting: how long the process waits in queue before being executed
+    - turnaround: totaltime from process enters queue until process finishes(waiting+burst)
+
+        '''
+    #Represents an individual process model and its context tracking.
     def __init__(self, pid: int, burst_time: int, arrival_time: int = 0):
         self.pid = pid
         self.burst_time = burst_time
@@ -22,9 +30,6 @@ class Process:
         self.turnaround_time = 0
         self.waiting_time = 0
 
-    @property
-    def label(self) :
-        return f"Process {self.pid}"
 
 
 
@@ -115,9 +120,9 @@ class RoundRobinScheduler:
     def _process_worker(self, process: Process, run_time: int):
         """Simulates CPU burst cycles safely utilizing a Thread Semaphore."""
         with self.cpu_lock:
-            self.ui_queue.put(("status", f"🟢 {process.label} is running for {run_time}s..."))
+            self.ui_queue.put(("status", f"🟢 Process {process.pid} is running for {run_time}s..."))
             time.sleep(run_time)
-            self.ui_queue.put(("status", f"🔴 {process.label} finished after {run_time}s."))
+            self.ui_queue.put(("status", f"🔴 Process {process.pid} finished after {run_time}s."))
 
     def run(self):
         """Executes the Round Robin scheduling simulation loop."""
@@ -166,7 +171,7 @@ class RoundRobinScheduler:
             proc.waiting_time = proc.turnaround_time - proc.burst_time
 
         df_results = pd.DataFrame({
-            "Process": [p.label for p in self.processes],
+            "Process": [p.pid for p in self.processes],
             "Arrival Time": [p.arrival_time for p in self.processes],
             "Burst Time": [p.burst_time for p in self.processes],
             "Completion Time(CT)": [p.completion_time for p in self.processes],
@@ -214,169 +219,169 @@ def ganttchart(chart):
     st.pyplot(fig)
 
 
+def main():
+    # INTERACTION & UI PRESENTATION LAYER
+    #Handles everything related to layout rendering and application UI state.
+    st.set_page_config(page_title="RR Scheduler", layout="wide")
+    # 🏠 Home navigation button to go back to the Main Menu selection grid
+    if st.button("⬅️ Back to Main Menu"):
+        st.switch_page("Main_Menu.py")
+    st.title("🔄️ Round Robin Scheduler")
 
-# INTERACTION & UI PRESENTATION LAYER
-#Handles everything related to layout rendering and application UI state.
-st.set_page_config(page_title="RR Scheduler", layout="wide")
-# 🏠 Home navigation button to go back to the Main Menu selection grid
-if st.button("⬅️ Back to Main Menu"):
-    st.switch_page("Main_Menu.py")
-st.title("🔄️ Round Robin Scheduler")
 
+    st.sidebar.header("Configuration")
+    num_processes = st.sidebar.number_input("Number of Processes", min_value=3, value=3)
+    if "rr_quantum_input" not in st.session_state:
+        st.session_state["rr_quantum_input"] = 2
 
-st.sidebar.header("Configuration")
-num_processes = st.sidebar.number_input("Number of Processes", min_value=3, value=3)
-if "rr_quantum_input" not in st.session_state:
-    st.session_state["rr_quantum_input"] = 2
-
-for i in range(1, num_processes + 1):
-    if f"ui_at_{i}" not in st.session_state:
-        st.session_state[f"ui_at_{i}"] = 0
-    if f"ui_bt_{i}" not in st.session_state:
-        st.session_state[f"ui_bt_{i}"] = 3
-
-# 2. Add the "Randomize" button (Updates the widget keys directly to avoid silent state freezing)
-if st.sidebar.button("🎲 Randomize Inputs & Quantum"):
-    st.session_state["rr_quantum_input"] = random.randint(2, 4)
     for i in range(1, num_processes + 1):
-        st.session_state[f"ui_at_{i}"] = random.randint(0, 5)
-        st.session_state[f"ui_bt_{i}"] = random.randint(1, 10)
-    st.rerun()
+        if f"ui_at_{i}" not in st.session_state:
+            st.session_state[f"ui_at_{i}"] = 0
+        if f"ui_bt_{i}" not in st.session_state:
+            st.session_state[f"ui_bt_{i}"] = 3
 
-# 3. Render Quantum input tied to the key directly
-quantum = st.sidebar.number_input(
-    "Time Quantum (Default=2s)", 
-    min_value=2, 
-    key="rr_quantum_input"
-)
+    # Add the "Randomize" button (Updates the widget keys directly to avoid silent state freezing)
+    if st.sidebar.button("🎲 Randomize Inputs & Quantum"):
+        st.session_state["rr_quantum_input"] = random.randint(2, 4)
+        for i in range(1, num_processes + 1):
+            st.session_state[f"ui_at_{i}"] = random.randint(0, 5)
+            st.session_state[f"ui_bt_{i}"] = random.randint(1, 10)
+        st.rerun()
 
-# 4. Render side-by-side inputs using direct key binding
-processes = []
-for i in range(1, num_processes + 1):
-    col1, col2 = st.sidebar.columns(2)
-    
-    with col1:
-        at = col1.number_input(
-            f"P{i} Arrival", 
-            min_value=0, 
-            key=f"ui_at_{i}"
-        )
-    with col2:
-        bt = col2.number_input(
-            f"P{i} Burst (s)", 
-            min_value=1, 
-            key=f"ui_bt_{i}"
-        )
-        
-    processes.append(Process(pid=i, burst_time=bt, arrival_time=at))
-
-if "simulation_results" not in st.session_state:
-    st.session_state.simulation_results = None
-
-if st.sidebar.button("Start", type="primary"):
-    st.session_state.simulation_results = None  
-    shared_queue = Queue()
-    db_mgr = DatabaseManager()
-        
-    scheduler = RoundRobinScheduler(
-        processes=processes, 
-        quantum=quantum, 
-        ui_queue=shared_queue
+    # Render Quantum input tied to the key directly
+    quantum = st.sidebar.number_input(
+        "Time Quantum (Default=2s)", 
+        min_value=2, 
+        key="rr_quantum_input"
     )
+
+    # Render side-by-side inputs using direct key binding
+    processes = []
+    for i in range(1, num_processes + 1):
+        col1, col2 = st.sidebar.columns(2)
         
-    scheduler_thread = threading.Thread(target=scheduler.run)
-    scheduler_thread.start()
-
-    
-     
-    st.subheader("🖥️ Live Thread Activity Status")
-    log_container = st.empty()
-    log_text = ""
-   
-
-    while scheduler_thread.is_alive() or not shared_queue.empty():
-         if not shared_queue.empty():
-            msg_type, payload = shared_queue.get()   
-            if msg_type == "status":
-                    log_text += payload + "\n"
-                    log_container.code(log_text)
-            elif msg_type == "results":
-                st.session_state.simulation_results = payload
-            time.sleep(0.05)
+        with col1:
+            at = col1.number_input(
+                f"P{i} Arrival", 
+                min_value=0, 
+                key=f"ui_at_{i}"
+            )
+        with col2:
+            bt = col2.number_input(
+                f"P{i} Burst (s)", 
+                min_value=1, 
+                key=f"ui_bt_{i}"
+            )
             
-    st.success(" Scheduling Analytics Completed Successfully!")
-    time.sleep(0.1)
-    st.rerun()
-    
-# Display current results if they exist
-if st.session_state.simulation_results is not None:
-    df_res, avg_wt, avg_tat, df_gantt = st.session_state.simulation_results
+        processes.append(Process(pid=i, burst_time=bt, arrival_time=at))
 
-    col_m1, col_m2 = st.columns(2)
-    col_m1.metric(label="Average Waiting Time", value=f"{avg_wt:.2f} s")
-    col_m2.metric(label="Average Turnaround Time", value=f"{avg_tat:.2f} s")
+    if "simulation_results" not in st.session_state:
+        st.session_state.simulation_results = None
 
-    #  Performance Table Summary 
-    st.subheader("📋 Performance Table")
-    st.dataframe(df_res.set_index(df_res.columns[0]), use_container_width=True)
-
-    save_col1, save_col2 = st.columns([1,3])
-
-    with save_col1:
-        if st.button("💾 Save Results to Database", type="secondary", key="rr_manual_save"):
-            db_mgr = DatabaseManager(db_name="RR_scheduler_history.db")
-            table_created = db_mgr.save_results(df_res, "RR", avg_wt, avg_tat )
-            st.success(f"Successfully saved to your table: {table_created}")
-
-    #  Drawing Gantt Chart Timeline 
-    st.subheader("📊 Gantt Chart Timeline")
-    ganttchart(df_gantt.values.tolist())
-
-    st.markdown("---")
-    st.subheader("📶 Algorithm Performance Comparison")
-    st.write("Running this exact workload configuration through FCFS and SJF engines for comparison.")
-
-    bursts_list = [p.burst_time for p in processes]
-
-    # 1. Round Robin values come from this page's variables
-    rr_wait = avg_wt
-    rr_tat = avg_tat
-
-    # 2. Simulate FCFS metrics for these bursts
-    fcfs_waiting_times = []
-    current_wait = 0
-    for b in bursts_list:
-        fcfs_waiting_times.append(current_wait)
-        current_wait += b
-        fcfs_wait = round(sum(fcfs_waiting_times) / len(bursts_list), 2)
-    fcfs_tat = round(fcfs_wait + (sum(bursts_list) / len(bursts_list)), 2)
-
-    # 3. Simulate Shortest Job First (SJF) metrics for these bursts
-    sorted_bursts = sorted(bursts_list)
-    sjf_waiting_times = []
-    current_wait = 0
-    for b in sorted_bursts:
-        sjf_waiting_times.append(current_wait)
-        current_wait += b
-    sjf_wait = round(sum(sjf_waiting_times) / len(bursts_list), 2)
-    sjf_tat = round(sjf_wait + (sum(bursts_list) / len(bursts_list)), 2)
-
-        # 4. Compile metrics into a clean summary table
-    comparison_data = [
-            {"Algorithm": "First Come First Serve (FCFS)", "Average Waiting Time": f"{fcfs_wait:.2f} s", "Average Turnaround Time": f"{fcfs_tat:.2f} s", "raw_wait": fcfs_wait, "raw_tat": fcfs_tat},
-            {"Algorithm": "Shortest Job First (SJF)", "Average Waiting Time": f"{sjf_wait:.2f} s", "Average Turnaround Time": f"{sjf_tat:.2f} s", "raw_wait": sjf_wait, "raw_tat": sjf_tat},
-            {"Algorithm": f"Round Robin (RR, q={st.session_state.get('time_quantum', 2)})", "Average Waiting Time": f"{rr_wait:.2f} s", "Average Turnaround Time": f"{rr_tat:.2f} s", "raw_wait": rr_wait, "raw_tat": rr_tat}
-        ]
-    df_compare = pd.DataFrame(comparison_data)
-    st.dataframe(df_compare[["Algorithm", "Average Waiting Time", "Average Turnaround Time"]], use_container_width=True)
-
-      # Determine and display the winner dynamically
-    winner_row = min(comparison_data, key=lambda x: (x["raw_wait"], x["raw_tat"]))
-    st.success(
-            f"🏆 **Performance Insight:** Recommended: For this specific set of process burst times, **{winner_row['Algorithm']}** "
-            f"is the most optimal scheduling method!"
+    if st.sidebar.button("Start", type="primary"):
+        st.session_state.simulation_results = None  
+        shared_queue = Queue()
+        db_mgr = DatabaseManager()
+            
+        scheduler = RoundRobinScheduler(
+            processes=processes, 
+            quantum=quantum, 
+            ui_queue=shared_queue
         )
-    st.markdown("---")
+            
+        scheduler_thread = threading.Thread(target=scheduler.run)
+        scheduler_thread.start()
+
+        
+        
+        st.subheader("🖥️ Live Thread Activity Status")
+        log_container = st.empty()
+        log_text = ""
+    
+
+        while scheduler_thread.is_alive() or not shared_queue.empty():
+            if not shared_queue.empty():
+                msg_type, payload = shared_queue.get()   
+                if msg_type == "status":
+                        log_text += payload + "\n"
+                        log_container.code(log_text)
+                elif msg_type == "results":
+                    st.session_state.simulation_results = payload
+                time.sleep(0.05)
+                
+        st.success(" Scheduling Analytics Completed Successfully!")
+        time.sleep(0.1)
+        st.rerun()
+        
+    # Display current results if they exist
+    if st.session_state.simulation_results is not None:
+        df_res, avg_wt, avg_tat, df_gantt = st.session_state.simulation_results
+
+        col_m1, col_m2 = st.columns(2)
+        col_m1.metric(label="Average Waiting Time", value=f"{avg_wt:.2f} s")
+        col_m2.metric(label="Average Turnaround Time", value=f"{avg_tat:.2f} s")
+
+        #  Performance Table Summary 
+        st.subheader("📋 Performance Table")
+        st.dataframe(df_res.set_index(df_res.columns[0]), use_container_width=True)
+
+        save_col1, save_col2 = st.columns([1,3])
+
+        with save_col1:
+            if st.button("💾 Save Results to Database", type="secondary", key="rr_manual_save"):
+                db_mgr = DatabaseManager(db_name="RR_scheduler_history.db")
+                table_created = db_mgr.save_results(df_res, "RR", avg_wt, avg_tat )
+                st.success(f"Successfully saved to your table: {table_created}")
+
+        #  Drawing Gantt Chart Timeline 
+        st.subheader("📊 Gantt Chart Timeline")
+        ganttchart(df_gantt.values.tolist())
+
+        st.markdown("---")
+        st.subheader("📶 Algorithm Performance Comparison")
+        st.write("Running this exact workload configuration through FCFS and SJF engines for comparison.")
+
+        bursts_list = [p.burst_time for p in processes]
+
+        # 1. Round Robin values come from this page's variables
+        rr_wait = avg_wt
+        rr_tat = avg_tat
+
+        # 2. Simulate FCFS metrics for these bursts
+        fcfs_waiting_times = []
+        current_wait = 0
+        for b in bursts_list:
+            fcfs_waiting_times.append(current_wait)
+            current_wait += b
+            fcfs_wait = round(sum(fcfs_waiting_times) / len(bursts_list), 2)
+        fcfs_tat = round(fcfs_wait + (sum(bursts_list) / len(bursts_list)), 2)
+
+        # 3. Simulate Shortest Job First (SJF) metrics for these bursts
+        sorted_bursts = sorted(bursts_list)
+        sjf_waiting_times = []
+        current_wait = 0
+        for b in sorted_bursts:
+            sjf_waiting_times.append(current_wait)
+            current_wait += b
+        sjf_wait = round(sum(sjf_waiting_times) / len(bursts_list), 2)
+        sjf_tat = round(sjf_wait + (sum(bursts_list) / len(bursts_list)), 2)
+
+            # 4. Compile metrics into a clean summary table
+        comparison_data = [
+                {"Algorithm": "First Come First Serve (FCFS)", "Average Waiting Time": f"{fcfs_wait:.2f} s", "Average Turnaround Time": f"{fcfs_tat:.2f} s", "raw_wait": fcfs_wait, "raw_tat": fcfs_tat},
+                {"Algorithm": "Shortest Job First (SJF)", "Average Waiting Time": f"{sjf_wait:.2f} s", "Average Turnaround Time": f"{sjf_tat:.2f} s", "raw_wait": sjf_wait, "raw_tat": sjf_tat},
+                {"Algorithm": f"Round Robin (RR, q={st.session_state.get('time_quantum', 2)})", "Average Waiting Time": f"{rr_wait:.2f} s", "Average Turnaround Time": f"{rr_tat:.2f} s", "raw_wait": rr_wait, "raw_tat": rr_tat}
+            ]
+        df_compare = pd.DataFrame(comparison_data)
+        st.dataframe(df_compare[["Algorithm", "Average Waiting Time", "Average Turnaround Time"]], use_container_width=True)
+
+        # Determine and display the winner dynamically
+        winner_row = min(comparison_data, key=lambda x: (x["raw_wait"], x["raw_tat"]))
+        st.success(
+                f"🏆 **Performance Insight:** Recommended: For this specific set of process burst times, **{winner_row['Algorithm']}** "
+                f"is the most optimal scheduling method!"
+            )
+        st.markdown("---")
 
 
  

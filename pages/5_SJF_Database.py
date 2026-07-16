@@ -6,6 +6,18 @@ import datetime
 
 # Database Management & Logic Layer(OOP)
 class SJFDatabaseViewer:
+    """
+    Encapsulates all read/delete/export operations against the SJF
+    scheduler's SQLite history database.
+ 
+    This mirrors the naming/table-per-run scheme used by
+    DatabaseManager in the scheduler page (run_SJF_Table_N +
+    a run_index summary table), but only ever reads or deletes,
+    it never creates new run tables, since saving new runs is only done 
+    when the user decides to using the "Save to Database" button.
+
+    """
+     
     def __init__(self, db_name="sjf_scheduler_history.db"):
         #Store the database filename as an instance attribute
         self.db_name = db_name
@@ -21,11 +33,17 @@ class SJFDatabaseViewer:
                 # Unpack list of single-value tuples into a plain list of strings
                 tables = [row[0] for row in cursor.fetchall()]
                 
-                # Sort them numerically descending so the newest run is first
+                # Sort them numerically descending so the newest run is first.
+                # A plain string sort would put "Table_10" before "Table_2",
+                # so we split off and cast the trailing number to int instead.
+                
                 tables.sort(key=lambda x: int(x.split("_")[-1]), reverse=True)
                 return tables
         except Exception as e:
-            # Handle connection errors gracefully
+            # Handle connection errors gracefully (e.g. DB file locked,
+            # corrupted, or missing) rather than letting the whole page
+            # crash - the caller treats an empty list the same as "no
+            # runs saved yet".
             st.error(f"Database extraction connection error: {e}")
             return []
 
@@ -52,6 +70,7 @@ class SJFDatabaseViewer:
             cursor = conn.cursor()
             for table in tables_to_drop:
                 cursor.execute(f"DROP TABLE IF EXISTS {table}")
+                cursor.execute("DELETE FROM run_index WHERE table_name = ?", (table,))
             conn.commit() # Persist the changes
 
     def export_csv_data(self, all_tables: list) -> str:
@@ -70,7 +89,9 @@ class SJFDatabaseViewer:
                 all_data.append(df)
                 
         if all_data:
-            # Stack all run Dataframes into one combined table
+             # Stack all run DataFrames into one combined table. Since
+            # every run table shares the same schema, a simple
+            # concat is used
             final_df = pd.concat(all_data, ignore_index=True)
 
             # Remove internal/duplicate columns not needed in the export
@@ -106,7 +127,10 @@ def run_database_app():
     col1, col2 = st.columns([1, 1])
 
     with col1:
-        # confirmation box to confirm deletion
+        # Deletion is destructive and irreversible, so it's gated
+        # behind an explicit confirmation checkbox rather than firing
+        # immediately on click. This prevents against accidental
+        # misclicks wiping out saved history.
         confirm_clear = st.checkbox("Confirm clear history?")
         # clear all history button
         if st.button("🗑️ Clear All History", type="secondary", key="clear_rr"):
@@ -125,7 +149,7 @@ def run_database_app():
             st.download_button(
                 label="📤 Export History to CSV",
                 data=csv_data,
-                file_name="round_robin_history_export.csv",
+                file_name="shortest_job_first_history_export.csv",
                 mime="text/csv",
                 type="primary"
             )
@@ -146,7 +170,7 @@ def run_database_app():
     if selected_table_raw == "ALL_RUNS":
         st.subheader("📊 All Simulation Runs")
         
-        # Loop through each table and render them one by one, keeping them unmerged
+        # Loop through each table and render them one by one, keeping them unmerged(each with its own metrics/table)
         for table in tables:
             run_num = table.split('_')[-1]
             df_raw = viewer.fetch_table_data(table)
@@ -159,6 +183,9 @@ def run_database_app():
                     dt_obj = datetime.datetime.fromisoformat(ts)
                     formatted = dt_obj.strftime("%A, %d %B %Y at %I:%M %p")
                 except Exception:
+                    # If parsing fails for any reason, fall back to
+                    # showing the raw stored value rather than crashing
+                    # the whole page over a formatting issue.
                     formatted = ts
             else:
                 # Dynamic fallback calculations if metadata table missing

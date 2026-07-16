@@ -2,7 +2,7 @@ import sqlite3
 import streamlit as st
 import pandas as pd
 
-# 🏛️ DATABASE MANAGEMENT
+#  DATABASE MANAGEMENT
 class DatabaseManager:
     def __init__(self, db_name="FCFS_scheduler_history.db"):
         self.db_name = db_name
@@ -125,7 +125,7 @@ class FCFSDatabaseViewer:
         return ""
 
 
-# 🖥️ INTERACTION & PRESENTATION LAYER
+#  INTERACTION & PRESENTATION LAYER
 def run_database_app():
     st.set_page_config(page_title="FCFS Database History", layout="wide")
 
